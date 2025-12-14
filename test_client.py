@@ -202,7 +202,6 @@ def main():
         print("    messages=[{'role': 'user', 'content': 'Hello!'}]")
         print(")")
         print("```")
-        print(f"\nTested with parameters: --limit {args.limit} --sort-by {args.sort_by} --reverse")
     else:
         print("\n" + "=" * 60)
         print("❌ Test failed. Please check the implementation.")
