@@ -1,5 +1,5 @@
 [project]
-name = "openrouterfreescanner"
+name = "openrouterfree"
 version = "1.0.0"
 authors = [
   { name="tcsenpai", email="tcsenpai@discus.sh" },
@@ -9,6 +9,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "requests",
+    "openai",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -21,8 +22,8 @@ classifiers = [
 "Bug Tracker" = "https://github.com/tcsenpai/openrouter-free-scanner/issues"
 
 [project.scripts]
-openrouter-free-scanner = "openrouterfreescanner.main:main"
-openrouter-free-proxy = "openrouterfreescanner.proxy:main"
+openrouter-free-scanner = "openrouterfree.scanner:main"
+openrouter-free-proxy = "openrouterfree.proxy:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]

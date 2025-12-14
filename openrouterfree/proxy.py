@@ -4,76 +4,17 @@ import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 import requests
-from .main import get_free_models, filter_models, sort_models
+from typing import Optional
+from .models import ModelStats, get_filtered_models
 
-
-class ModelStats:
-    """Track error statistics for each model."""
-    
-    def __init__(self, error_threshold=3):
-        self.stats = {}  # model_id -> {'errors': count, 'successes': count, 'last_error': timestamp}
-        self.error_threshold = error_threshold
-    
-    def record_error(self, model_id):
-        """Record an error for a model."""
-        if model_id not in self.stats:
-            self.stats[model_id] = {'errors': 0, 'successes': 0, 'last_error': None}
-        
-        self.stats[model_id]['errors'] += 1
-        self.stats[model_id]['last_error'] = time.time()
-    
-    def record_success(self, model_id):
-        """Record a successful request for a model."""
-        if model_id not in self.stats:
-            self.stats[model_id] = {'errors': 0, 'successes': 0, 'last_error': None}
-        
-        self.stats[model_id]['successes'] += 1
-    
-    def is_model_available(self, model_id):
-        """Check if a model is available based on error threshold."""
-        if model_id not in self.stats:
-            return True
-        
-        stats = self.stats[model_id]
-        
-        # If last error was more than 5 minutes ago, reset error count
-        if stats['last_error'] and (time.time() - stats['last_error']) > 300:
-            stats['errors'] = 0
-            return True
-        
-        return stats['errors'] < self.error_threshold
-    
-    def get_best_model(self, models):
-        """Get the best model based on success rate and availability."""
-        available_models = [m for m in models if self.is_model_available(m['id'])]
-        
-        if not available_models:
-            # Reset all stats if no models are available
-            self.stats = {}
-            return models[0] if models else None
-        
-        # Sort by success rate (successes / (successes + errors))
-        def success_rate(model):
-            model_id = model['id']
-            if model_id not in self.stats:
-                return 1.0  # New models get priority
-            
-            stats = self.stats[model_id]
-            total = stats['successes'] + stats['errors']
-            if total == 0:
-                return 1.0
-            
-            return stats['successes'] / total
-        
-        return max(available_models, key=success_rate)
-
+OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 class ProxyHandler(BaseHTTPRequestHandler):
     """HTTP request handler for OpenAI-compatible proxy."""
     
     # Class variables shared across all instances
     models_list = []
-    model_stats = None
+    model_stats: Optional[ModelStats] = None  # Will be initialized in start_proxy_server
     api_key = None
     
     def log_message(self, format, *args):
@@ -147,6 +88,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             client_api_key = auth_header.replace('Bearer ', '').strip()
             
             # Get the best available model
+            if self.model_stats is None:
+                self.send_error(503, "Model stats not initialized")
+                return
             best_model = self.model_stats.get_best_model(self.models_list)
             
             if not best_model:
@@ -179,15 +123,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     # Check for rate limit errors
                     if response.status_code == 429 or (response.status_code >= 400 and 'rate' in response.text.lower()):
                         self.log_message(f"Rate limit hit for {best_model['id']}: {response.text}")
-                        self.model_stats.record_error(best_model['id'])
+                        if self.model_stats is not None:
+                            self.model_stats.record_error(best_model['id'])
                         
                         # Try next model
                         if attempt < max_retries - 1:
-                            best_model = self.model_stats.get_best_model(self.models_list)
-                            if best_model:
-                                request_data['model'] = best_model['id']
-                                self.log_message(f"Retrying with next model: {best_model['id']}")
-                                continue
+                            if self.model_stats is not None:
+                                best_model = self.model_stats.get_best_model(self.models_list)
+                                if best_model:
+                                    request_data['model'] = best_model['id']
+                                    self.log_message(f"Retrying with next model: {best_model['id']}")
+                                    continue
                         
                         # No more models to try
                         self.send_response(response.status_code)
@@ -199,7 +145,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     
                     # Success!
                     if response.status_code == 200:
-                        self.model_stats.record_success(best_model['id'])
+                        if self.model_stats is not None:
+                            self.model_stats.record_success(best_model['id'])
                         self.log_message(f"Success with model: {best_model['id']}")
                     else:   
                         self.log_message(f"Failed with model: {best_model['id']} response code: {response.status_code} response text: {response.text}")
@@ -218,14 +165,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     return
                 
                 except requests.exceptions.RequestException as e:
-                    self.log_message(f"Request error for {best_model['id']}: {str(e)}")
-                    self.model_stats.record_error(best_model['id'])
+                    if best_model:
+                        self.log_message(f"Request error for {best_model['id']}: {str(e)}")
+                        if self.model_stats is not None:
+                            self.model_stats.record_error(best_model['id'])
                     
                     if attempt < max_retries - 1:
-                        best_model = self.model_stats.get_best_model(self.models_list)
-                        if best_model:
-                            request_data['model'] = best_model['id']
-                            continue
+                        if self.model_stats is not None:
+                            best_model = self.model_stats.get_best_model(self.models_list)
+                            if best_model:
+                                request_data['model'] = best_model['id']
+                                continue
                     
                     self.send_error(502, f"Bad Gateway: {str(e)}")
                     return
@@ -237,9 +187,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_error(500, f"Internal error: {str(e)}")
 
 
-def start_proxy_server(port, limit=None, name=None, min_context_length=None, 
-                       provider=None, sort_by='context_length', reverse=True,
-                       error_threshold=3, required_parameters=None):
+def start_proxy_server(port, limit=None, name=None, min_context_length=None,
+                        provider=None, sort_by='context_length', reverse=True,
+                        error_threshold=3, required_parameters=None,
+                        base_url=OPENROUTER_DEFAULT_BASE_URL, api_key=None):
     """
     Start the OpenAI-compatible proxy server.
     
@@ -255,27 +206,20 @@ def start_proxy_server(port, limit=None, name=None, min_context_length=None,
         required_parameters (list): List of parameter names that must be supported by the model
     """
     print("Fetching free models from OpenRouter...")
-    models = get_free_models()
-    
-    if not models:
-        print("Error: Could not fetch models from OpenRouter")
-        return
-    
-    # Apply filters
-    models = filter_models(
-        models, 
-        name=name, 
-        min_context_length=min_context_length, 
-        provider=provider,
-        required_parameters=required_parameters
-    )
-    models = sort_models(models, sort_by=sort_by, reverse=reverse)
-    
-    if limit:
-        models = models[:limit]
-    
-    if not models:
-        print("Error: No models match the specified criteria")
+    try:
+        models = get_filtered_models(
+            limit=limit,
+            name=name,
+            min_context_length=min_context_length,
+            provider=provider,
+            sort_by=sort_by,
+            reverse=reverse,
+            required_parameters=required_parameters,
+            base_url=base_url,
+            api_key=api_key
+        )
+    except ValueError as e:
+        print(f"Error: {e}")
         return
     
     print(f"\nLoaded {len(models)} free models:")
@@ -330,17 +274,20 @@ def main():
                        help="Reverse sort order (default: True)")
     parser.add_argument("--error-threshold", type=int, default=3,
                        help="Number of errors before switching models (default: 3)")
-    parser.add_argument("--require-params", type=str, 
+    parser.add_argument("--require-params", type=str,
                        help="Comma-separated list of required parameters (e.g., 'tool_choice,tools')")
-    
+    parser.add_argument("--base-url", type=str, default=OPENROUTER_DEFAULT_BASE_URL,
+                       help="Base URL for OpenRouter API")
+    parser.add_argument("--api-key", type=str, help="API key for OpenRouter authentication")
+
     args = parser.parse_args()
-    
+
     # Parse required parameters
     required_params = None
     if args.require_params:
         required_params = [p.strip() for p in args.require_params.split(',') if p.strip()]
         print(f"Requiring models to support parameters: {', '.join(required_params)}")
-    
+
     start_proxy_server(
         port=args.port,
         limit=args.limit,
@@ -350,7 +297,9 @@ def main():
         sort_by=args.sort_by,
         reverse=args.reverse,
         error_threshold=args.error_threshold,
-        required_parameters=required_params
+        required_parameters=required_params,
+        base_url=args.base_url,
+        api_key=args.api_key
     )
 
 

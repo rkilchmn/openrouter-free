@@ -1,27 +1,36 @@
 import requests
 import json
 import argparse
+from typing import List, Dict, Any, Optional
 
-def get_free_models(exclude_routers=True):
+OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+
+def get_free_models(exclude_routers=True, base_url=OPENROUTER_DEFAULT_BASE_URL, api_key=None):
     """
     Fetches the list of all models from the OpenRouter API and returns the free ones.
-    
+
     Args:
         exclude_routers (bool): If True, excludes router models.
+        base_url (str): Base URL for the OpenRouter API.
+        api_key (str, optional): API key for authentication.
     """
     try:
-        response = requests.get("https://openrouter.ai/api/v1/models")
+        headers = {}
+        if api_key:
+            headers['Authorization'] = f'Bearer {api_key}'
+
+        response = requests.get(f"{base_url}/models", headers=headers)
         response.raise_for_status()  # Raise an exception for bad status codes
         models = response.json().get("data", [])
         if exclude_routers:
             models = [model for model in models if "router" not in model.get("id", "").lower()]
-        
+
         free_models = []
         for model in models:
             pricing = model.get("pricing", {})
             if float(pricing.get("prompt", "0")) == 0 and float(pricing.get("completion", "0")) == 0:
                 free_models.append(model)
-                
+
         return free_models
 
     except requests.exceptions.RequestException as e:
@@ -86,9 +95,11 @@ def main():
     parser.add_argument("--require-params", type=str, help="Comma-separated list of required parameters (e.g., 'tool_choice,tools')")
     parser.add_argument("--sort-by", type=str, default="name", help="Sort models by a specific field (e.g., name, context_length).")
     parser.add_argument("--reverse", action="store_true", help="Reverse the sort order.")
+    parser.add_argument("--base-url", type=str, default=OPENROUTER_DEFAULT_BASE_URL, help="Base URL for OpenRouter API.")
+    parser.add_argument("--api-key", type=str, help="API key for OpenRouter authentication.")
     args = parser.parse_args()
 
-    models = get_free_models()
+    models = get_free_models(base_url=args.base_url, api_key=args.api_key)
 
     if models:
         # Parse required parameters
