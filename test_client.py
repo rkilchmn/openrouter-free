@@ -93,6 +93,12 @@ def parse_arguments():
         help="Filter models by provider (e.g., 'openai', 'anthropic')"
     )
     
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        help="Timeout for OpenAI client requests in seconds"
+    )
+    
     return parser.parse_args()
 
 def test_live_api_call(args):
@@ -119,6 +125,11 @@ def test_live_api_call(args):
         if args.require_params:
             required_params = [param.strip() for param in args.require_params.split(',')]
         
+        # Build kwargs for OpenAI client parameters
+        openai_kwargs = {}
+        if args.timeout:
+            openai_kwargs['timeout'] = args.timeout
+        
         # Create client with real API key and all parameters
         client = OpenRouterFreeOpenAIClient(
             api_key=api_key,
@@ -131,7 +142,8 @@ def test_live_api_call(args):
             reverse=args.reverse,
             required_parameters=required_params,
             max_retries=args.error_threshold,
-            base_retry_delay=args.base_retry_delay
+            base_retry_delay=args.base_retry_delay,
+            **openai_kwargs
         )
         
         print(f"  Using model: {client.best_model}")
@@ -169,6 +181,8 @@ def main():
     print(f"  Base retry delay: {args.base_retry_delay}")
     print(f"  API key env: {args.openai_api_key_env}")
     print(f"  API base: {args.openrouter_api_base}")
+    if args.timeout:
+        print(f"  Timeout: {args.timeout} seconds")
     if args.name:
         print(f"  Name filter: {args.name}")
     if args.min_context_length:
@@ -195,6 +209,12 @@ def main():
         print("# Create client - automatically selects best free model")
         print("client = OpenRouterFreeOpenAIClient(")
         print("    api_key='your-openrouter-api-key'")
+        print(")")
+        print("")
+        print("# Create client with additional OpenAI parameters")
+        print("client = OpenRouterFreeOpenAIClient(")
+        print("    api_key='your-openrouter-api-key',")
+        print("    timeout=30.0  # Pass through OpenAI client parameters")
         print(")")
         print("")
         print("# Use like standard OpenAI client")

@@ -24,7 +24,8 @@ class OpenRouterFreeOpenAIClient:
                  reverse: bool = True,
                  required_parameters: Optional[List[str]] = None,
                  max_retries: int = 3,
-                 base_retry_delay: float = 1.0):
+                 base_retry_delay: float = 1.0,
+                 **kwargs):
         """
         Initialize the client.
 
@@ -253,5 +254,6 @@ class OpenRouterFreeOpenAIClient:
             )
             
         return self._retry_with_exponential_backoff(make_api_call)
+
 
 
