@@ -122,6 +122,7 @@ def test_live_api_call(args):
         # Create client with real API key and all parameters
         client = OpenRouterFreeOpenAIClient(
             api_key=api_key,
+            base_url=args.openrouter_api_base,
             limit=args.limit,
             name=args.name,
             min_context_length=args.min_context_length,
@@ -129,7 +130,6 @@ def test_live_api_call(args):
             sort_by=args.sort_by,
             reverse=args.reverse,
             required_parameters=required_params,
-            openrouter_base_url=args.openrouter_api_base,
             max_retries=args.error_threshold,
             base_retry_delay=args.base_retry_delay
         )

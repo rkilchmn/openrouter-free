@@ -23,8 +23,6 @@ class OpenRouterFreeOpenAIClient:
                  sort_by: str = 'context_length',
                  reverse: bool = True,
                  required_parameters: Optional[List[str]] = None,
-                 openrouter_base_url: str = OPENROUTER_DEFAULT_BASE_URL,
-                 openrouter_api_key: Optional[str] = None,
                  max_retries: int = 3,
                  base_retry_delay: float = 1.0):
         """
@@ -40,8 +38,6 @@ class OpenRouterFreeOpenAIClient:
             sort_by: Field to sort models by
             reverse: Reverse sort order
             required_parameters: List of required parameters
-            openrouter_base_url: Base URL for fetching OpenRouter models
-            openrouter_api_key: API key for fetching OpenRouter models (optional)
             max_retries: Maximum number of retry attempts for failed requests
             base_retry_delay: Base delay in seconds for exponential backoff
         """
@@ -61,8 +57,8 @@ class OpenRouterFreeOpenAIClient:
             'sort_by': sort_by,
             'reverse': reverse,
             'required_parameters': required_parameters,
-            'base_url': openrouter_base_url,
-            'api_key': openrouter_api_key
+            'base_url': base_url,
+            'api_key': api_key
         }
         
         # Get the best free model
