@@ -1,4 +1,4 @@
-# OpenRouter Free Scanner and Proxy
+# OpenRouter Free
 
 A powerful tool to discover and interact with free AI models from OpenRouter.ai. Includes a command-line interface, Python library, and an OpenAI-compatible proxy server for seamless integration.
 
@@ -13,12 +13,12 @@ A powerful tool to discover and interact with free AI models from OpenRouter.ai.
 
 ```bash
 # Install from source
-git clone https://github.com/yourusername/openrouter-free-scanner.git
-cd openrouter-free-scanner
+git clone https://github.com/yourusername/openrouter-free.git
+cd openrouter-free
 pip install .
 
 # Or install directly with pip
-pip install openrouter-free-scanner
+pip install openrouter-free
 ```
 
 ## Basic Usage
@@ -28,19 +28,19 @@ pip install openrouter-free-scanner
 List available free models:
 
 ```bash
-openrouter-free-scanner
+openrouter-free
 ```
 
 Save models to a JSON file:
 
 ```bash
-openrouter-free-scanner -o
+openrouter-free -o
 ```
 
 ### Python Library
 
 ```python
-from openrouterfreescanner import get_free_models, filter_models, sort_models
+from openrouterfree import get_free_models, filter_models, sort_models
 
 # Get all free models
 models = get_free_models()
@@ -56,6 +56,30 @@ tools_models = filter_models(
 sorted_models = sort_models(models, sort_by='context_length', reverse=True)
 ```
 
+### OpenRouterFreeOpenAIClient
+
+For seamless integration with existing OpenAI-based code, use the `OpenRouterFreeOpenAIClient` which automatically selects and uses the best available free model:
+
+```python
+from openrouterfree import OpenRouterFreeOpenAIClient
+
+# Create client - automatically selects best free model
+client = OpenRouterFreeOpenAIClient(
+    api_key='your-openrouter-api-key'
+)
+
+# Create client with additional OpenAI parameters
+client = OpenRouterFreeOpenAIClient(
+    api_key='your-openrouter-api-key',
+    timeout=30.0  # Pass through OpenAI client parameters
+)
+
+# Use like standard OpenAI client
+response = client.chat.completions.create(
+    messages=[{'role': 'user', 'content': 'Hello!'}]
+)
+```
+
 ## Proxy Server
 
 The proxy server provides an OpenAI-compatible API endpoint that automatically routes requests to available free models.
@@ -63,13 +87,13 @@ The proxy server provides an OpenAI-compatible API endpoint that automatically r
 ### Starting the Proxy
 
 ```bash
-python -m openrouterfreescanner.proxy --port 8080
+openrouter-free-proxy --port 8080
 ```
 
 ### Advanced Proxy Options
 
 ```bash
-python -m openrouterfreescanner.proxy \
+openrouter-free-proxy \
   --port 8080 \
   --limit 5 \
   --require-params "tool_choice,tools" \
@@ -136,7 +160,7 @@ The proxy respects rate limits and will automatically:
 ### Scanner Options
 
 ```
-usage: openrouter-free-scanner [-h] [-o] [--limit LIMIT] [--name NAME] 
+usage: openrouter-free [-h] [-o] [--limit LIMIT] [--name NAME]
                               [--min-context-length MIN_CONTEXT_LENGTH]
                               [--provider PROVIDER] [--sort-by SORT_BY]
                               [--reverse] [--require-params REQUIRE_PARAMS]
@@ -158,7 +182,7 @@ options:
 ### Proxy Options
 
 ```
-usage: proxy.py [-h] [--port PORT] [--limit LIMIT] [--name NAME]
+usage: openrouter-free-proxy [-h] [--port PORT] [--limit LIMIT] [--name NAME]
                [--min-context-length MIN_CONTEXT_LENGTH] [--provider PROVIDER]
                [--sort-by SORT_BY] [--reverse] [--error-threshold ERROR_THRESHOLD]
                [--require-params REQUIRE_PARAMS]

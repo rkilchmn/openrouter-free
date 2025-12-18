@@ -113,7 +113,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                         headers={
                             'Authorization': f'Bearer {client_api_key}',
                             'Content-Type': 'application/json',
-                            'HTTP-Referer': 'https://github.com/tcsenpai/openrouter-free-scanner',
+                            'HTTP-Referer': 'https://github.com/tcsenpai/openrouter-free',
                             'X-Title': 'OpenRouter Free Proxy'
                         },
                         json=request_data,

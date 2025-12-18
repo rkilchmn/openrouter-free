@@ -18,11 +18,11 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/tcsenpai/openrouter-free-scanner"
-"Bug Tracker" = "https://github.com/tcsenpai/openrouter-free-scanner/issues"
+"Homepage" = "https://github.com/tcsenpai/openrouter-free"
+"Bug Tracker" = "https://github.com/tcsenpai/openrouter-free/issues"
 
 [project.scripts]
-openrouter-free-scanner = "openrouterfree.scanner:main"
+openrouter-free = "openrouterfree.scanner:main"
 openrouter-free-proxy = "openrouterfree.proxy:main"
 
 [build-system]

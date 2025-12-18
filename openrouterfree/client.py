@@ -76,9 +76,10 @@ class OpenRouterFreeOpenAIClient:
             api_key=api_key,
             base_url=base_url,
             default_headers={
-                'HTTP-Referer': 'https://github.com/tcsenpai/openrouter-free-scanner',
+                'HTTP-Referer': 'https://github.com/tcsenpai/openrouter-free',
                 'X-Title': 'OpenRouter Free Client'
-            }
+            },
+            **kwargs
         )
 
         # Set up chat interface for compatibility

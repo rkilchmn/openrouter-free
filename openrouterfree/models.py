@@ -42,7 +42,7 @@ class ModelStats:
             stats['errors'] = 0
             return True
 
-        return stats['errors'] < self.error_threshold
+        return stats['errors'] <= self.error_threshold
 
     def get_best_model(self, models):
         """Get the best model based on success rate and availability."""
