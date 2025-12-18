@@ -72,9 +72,11 @@ class OpenRouterFreeOpenAIClient:
         print(f"Selected best free model: {self.best_model['id']}")
 
         # Create OpenAI client configured for OpenRouter
+        # Disable built-in retries since we handle our own with model switching
         self.client = OpenAI(
             api_key=api_key,
             base_url=base_url,
+            max_retries=0,
             default_headers={
                 'HTTP-Referer': 'https://github.com/tcsenpai/openrouter-free',
                 'X-Title': 'OpenRouter Free Client'
@@ -151,10 +153,10 @@ class OpenRouterFreeOpenAIClient:
                 try:
                     # Try to execute the function
                     result = func(*args, **kwargs)
-                    
-                    # Record success for current best model
-                    self.model_stats.record_success(model_id)
-                    print(f"Success with model: {model_id}")
+
+                    # Record success for the actual model used (may differ due to routing)
+                    self.model_stats.record_success(result.model)
+                    print(f"Success with model: {result.model}")
                     return result
                     
                 except Exception as e:
@@ -172,12 +174,17 @@ class OpenRouterFreeOpenAIClient:
                     if attempt >= self.max_retries:
                         print(f"All {self.max_retries} retry attempts exhausted for this API call")
                         break
-                    
+
+                    # Don't wait before the last attempt
+                    if attempt >= self.max_retries - 1:
+                        print(f"Attempt {attempt + 1} failed: {str(e)[:100]}...")
+                        continue  # Skip delay and retry immediately
+
                     # Calculate exponential backoff delay with jitter
                     delay = self.base_retry_delay * (2 ** attempt)
                     jitter = random.uniform(0.1, 0.3) * delay
                     total_delay = delay + jitter
-                    
+
                     print(f"Attempt {attempt + 1} failed: {str(e)[:100]}...")
                     print(f"Retrying in {total_delay:.1f} seconds...")
                     time.sleep(total_delay)
