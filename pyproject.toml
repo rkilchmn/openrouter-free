@@ -1,5 +1,5 @@
 [project]
-name = "openrouterfree"
+name = "openrouter-free"
 version = "1.0.0"
 authors = [
   { name="tcsenpai", email="tcsenpai@discus.sh" },
