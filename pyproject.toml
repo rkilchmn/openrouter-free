@@ -10,6 +10,7 @@ requires-python = ">=3.8"
 dependencies = [
     "requests",
     "openai",
+    "langchain-openai",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

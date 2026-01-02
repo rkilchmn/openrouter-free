@@ -1,4 +1,5 @@
 from openai import OpenAI
+from langchain_openai import ChatOpenAI
 from .models import get_best_free_model, ModelStats
 from typing import Optional, List
 import time
@@ -7,10 +8,10 @@ import random
 OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 
-class OpenRouterFreeOpenAIClient:
+class OpenRouterFreeOpenAIClient(ChatOpenAI):
     """
-    Simplified OpenAI-compatible client that routes to free OpenRouter models.
-    Uses OpenAI client with OpenRouter URL and automatic best model selection.
+    LangChain-compatible OpenAI client that routes to free OpenRouter models.
+    Inherits from ChatOpenAI for full method compatibility, with automatic best model selection and retry logic.
     """
 
     def __init__(self,
@@ -42,15 +43,8 @@ class OpenRouterFreeOpenAIClient:
             max_retries: Maximum number of retry attempts for failed requests
             base_retry_delay: Base delay in seconds for exponential backoff
         """
-        # Initialize model statistics tracking
-        self.error_threshold = max_retries
-        self.model_stats = ModelStats(error_threshold=self.error_threshold)
-        self.max_retries = max_retries
-        self.base_retry_delay = base_retry_delay
-        
-        
-        # Store configuration for retries
-        self.config = {
+        # Store configuration for model selection
+        config = {
             'limit': limit,
             'name': name,
             'min_context_length': min_context_length,
@@ -61,22 +55,28 @@ class OpenRouterFreeOpenAIClient:
             'base_url': base_url,
             'api_key': api_key
         }
-        
-        # Get the best free model
-        self.best_model = self._get_best_free_model_with_stats()
 
-        if not self.best_model:
+        # Initialize model statistics tracking
+        error_threshold = max_retries
+        model_stats = ModelStats(error_threshold=error_threshold)
+        max_retries_val = max_retries
+        base_retry_delay_val = base_retry_delay
+
+        # Get the best free model
+        best_model = self._get_best_free_model_with_stats_static(config, model_stats)
+
+        if not best_model:
             raise ValueError("No free models available")
 
         # Use the best model
-        print(f"Selected best free model: {self.best_model['id']}")
+        print(f"Selected best free model: {best_model['id']}")
 
-        # Create OpenAI client configured for OpenRouter
-        # Disable built-in retries since we handle our own with model switching
-        self.client = OpenAI(
+        # Call parent __init__ with selected model
+        super().__init__(
+            model=best_model['id'],
             api_key=api_key,
             base_url=base_url,
-            max_retries=0,
+            max_retries=0,  # Disable parent's retries, we handle our own
             default_headers={
                 'HTTP-Referer': 'https://github.com/tcsenpai/openrouter-free',
                 'X-Title': 'OpenRouter Free Client'
@@ -84,22 +84,27 @@ class OpenRouterFreeOpenAIClient:
             **kwargs
         )
 
-        # Set up chat interface for compatibility
-        self.chat = self.Chat(self)
-        self.completions = self.chat
+        # Now set instance attributes after super().__init__ (bypass Pydantic)
+        object.__setattr__(self, 'config', config)
+        object.__setattr__(self, 'error_threshold', error_threshold)
+        object.__setattr__(self, 'model_stats', model_stats)
+        object.__setattr__(self, 'max_retries', max_retries_val)
+        object.__setattr__(self, 'base_retry_delay', base_retry_delay_val)
+        object.__setattr__(self, 'best_model', best_model)
 
-    def _get_best_free_model_with_stats(self):
+    @staticmethod
+    def _get_best_free_model_with_stats_static(config, model_stats):
         """Get the best available free model using statistics tracking."""
         try:
             # Get filtered models using the stored configuration
             from .models import get_filtered_models
-            models = get_filtered_models(**self.config)
-            
+            models = get_filtered_models(**config)
+
             if not models:
                 return None
-                
+
             # Use ModelStats to get the best model
-            return self.model_stats.get_best_model(models)
+            return model_stats.get_best_model(models)
         except ValueError:
             return None
 
@@ -123,53 +128,54 @@ class OpenRouterFreeOpenAIClient:
         except ValueError:
             return None
             
-    def _retry_with_exponential_backoff(self, func, *args, **kwargs):
-        """Execute function with exponential retry and model switching based on error threshold."""
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        """Override to add retry logic with model switching."""
         last_exception = None
-        
-        # Keep trying until we get a successful result or exhaust all models
+
         while True:
             if not isinstance(self.best_model, dict) or 'id' not in self.best_model:
                 raise ValueError("No valid best model available")
-                
+
             model_id = self.best_model['id']
             print(f"Trying model: {model_id}")
-            
+
             # Check if this model has already exceeded error threshold
             if not self.model_stats.is_model_available(model_id):
                 print(f"Model {model_id} has exceeded error threshold ({self.error_threshold} errors), trying alternative...")
-                new_model = self._get_best_free_model_with_stats()
-                
+                new_model = self._get_best_free_model_with_stats_static(self.config, self.model_stats)
+
                 if not new_model or new_model['id'] == model_id:
                     print("No better alternative model available")
                     break
-                    
-                self.best_model = new_model
+
+                object.__setattr__(self, 'best_model', new_model)
+                self.model = new_model['id']  # Update model in parent
                 print(f"Switched to alternative model: {new_model['id']}")
                 continue
-            
+
             # Try current model up to max_retries times
             for attempt in range(self.max_retries + 1):
                 try:
-                    # Try to execute the function
-                    result = func(*args, **kwargs)
+                    # Call parent's _generate
+                    result = super()._generate(messages, stop, run_manager, **kwargs)
 
                     # Record success for the actual model used (may differ due to routing)
-                    self.model_stats.record_success(result.model)
-                    print(f"Success with model: {result.model}")
+                    actual_model = result.generations[0].message.response_metadata.get('model', model_id)
+                    self.model_stats.record_success(actual_model)
+                    print(f"Success with model: {actual_model}")
                     return result
-                    
+
                 except Exception as e:
                     last_exception = e
-                    
+
                     # Record error for current model
                     self.model_stats.record_error(model_id)
-                    
+
                     # Check if this model has now exceeded error threshold
                     if not self.model_stats.is_model_available(model_id):
                         print(f"Model {model_id} has now exceeded error threshold ({self.error_threshold} errors)")
                         break
-                    
+
                     # Check if this was the last retry for this attempt
                     if attempt >= self.max_retries:
                         print(f"All {self.max_retries} retry attempts exhausted for this API call")
@@ -188,80 +194,39 @@ class OpenRouterFreeOpenAIClient:
                     print(f"Attempt {attempt + 1} failed: {str(e)[:100]}...")
                     print(f"Retrying in {total_delay:.1f} seconds...")
                     time.sleep(total_delay)
-            
+
             # Check again if model exceeded error threshold after this round of retries
             if not self.model_stats.is_model_available(model_id):
                 print(f"Model {model_id} exceeded error threshold after retries, trying alternative...")
-                new_model = self._get_best_free_model_with_stats()
-                
+                new_model = self._get_best_free_model_with_stats_static(self.config, self.model_stats)
+
                 if not new_model or new_model['id'] == model_id:
                     print("No better alternative model available")
                     break
-                    
-                self.best_model = new_model
+
+                object.__setattr__(self, 'best_model', new_model)
+                self.model = new_model['id']
                 print(f"Switched to alternative model: {new_model['id']}")
                 # Continue the outer while loop to retry with new model
             else:
                 # Model still available but all retries exhausted, try alternative anyway
                 print(f"All retries exhausted for {model_id}, trying alternative model...")
-                new_model = self._get_best_free_model_with_stats()
-                
+                new_model = self._get_best_free_model_with_stats_static(self.config, self.model_stats)
+
                 if not new_model or new_model['id'] == model_id:
                     print("No better alternative model available")
                     break
-                    
-                self.best_model = new_model
+
+                object.__setattr__(self, 'best_model', new_model)
+                self.model = new_model['id']
                 print(f"Switched to alternative model: {new_model['id']}")
                 # Continue the outer while loop to retry with new model
-        
+
         # All models exhausted
         if last_exception:
             raise last_exception
         else:
             raise Exception("All retry attempts failed")
-
-    class Chat:
-        """Chat completions interface."""
-
-        def __init__(self, parent_client):
-            self.parent = parent_client
-            self.completions = self
-
-        def create(self, model="auto", messages=None, **kwargs):
-            """
-            Create chat completion using the pre-selected best model.
-            Ignores the model parameter and uses the best free model.
-            """
-            return self.parent.chat_completions_create(model, messages, **kwargs)
-
-    def chat_completions_create(self, model, messages, **kwargs):
-        """
-        Create chat completion using OpenAI client with OpenRouter.
-        Always uses the pre-selected best free model with exponential retry.
-
-        Args:
-            model: Ignored - always uses the best free model
-            messages: List of message dictionaries
-            **kwargs: Additional OpenAI API parameters
-
-        Returns:
-            OpenAI ChatCompletion response
-        """
-        # Ensure we have a valid best model
-        if not self.best_model or not isinstance(self.best_model, dict) or 'id' not in self.best_model:
-            raise ValueError("No valid best model available")
-            
-        model_id = self.best_model['id']
-        
-        # Use exponential retry for the API call
-        def make_api_call():
-            return self.client.chat.completions.create(
-                model=model_id,
-                messages=messages,
-                **kwargs
-            )
-            
-        return self._retry_with_exponential_backoff(make_api_call)
 
 
 
